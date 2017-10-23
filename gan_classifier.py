@@ -100,21 +100,21 @@ dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
 
 if opt.target == 'usps':
-    target = USPS(root=opt.targetroot,
+    target = USPS(data_dir=opt.targetroot,
                 transform=transforms.Compose([
                     transforms.Scale(opt.imageSize),
                     transforms.ToTensor(),
                     ]))
 
 assert target
-t_loader = torch.utils.data.DataLoader(target, batch_size=opt.batch_size,
+t_loader = torch.utils.data.DataLoader(target, batch_size=opt.batchSize,
                                         shuffle=True, num_workers=int(opt.workers))
 
 ngpu = int(opt.ngpu)
 nz = int(opt.nz)
 ngf = int(opt.ngf)
 ndf = int(opt.ndf)
-nc = 3
+nc = 1
 
 
 # custom weights initialization called on netG and netD
@@ -132,6 +132,9 @@ class _netG(nn.Module):
         super(_netG, self).__init__()
         self.ngpu = ngpu
         self.main = nn.Sequential(
+            # fc layer
+            nn.Linear(ngf*ngf+nz, nz),
+            nn.ReLU(True),
             # input is Z, going into a convolution
             nn.ConvTranspose2d(     nz, ngf * 8, 4, 1, 0, bias=False),
             nn.BatchNorm2d(ngf * 8),
@@ -209,19 +212,25 @@ if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
+##### Classifier #####
+netT = ResNet18()
+
 criterion = nn.BCELoss()
+criterion_T = nn.CrossEntropyLoss()
 
 input = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
 noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
 fixed_noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).normal_(0, 1)
 label = torch.FloatTensor(opt.batchSize)
-real_label = 1
+real_label = target_label = 1
 fake_label = 0
 
 if opt.cuda:
     netD.cuda()
     netG.cuda()
+    netT.cuda()
     criterion.cuda()
+    criterion_T.cuda()
     input, label = input.cuda(), label.cuda()
     noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
 
@@ -230,30 +239,50 @@ fixed_noise = Variable(fixed_noise)
 # setup optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+optimizerT = optim.SGD(netT.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
 
 for epoch in range(opt.niter):
-    for i, data in enumerate(dataloader, 0):
+    for i, (data, t_data) in enumerate(zip(dataloader, t_loader), 0):
         ############################
         # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
         ###########################
-        # train with real
+#        # train with real
+#        netD.zero_grad()
+#        real_cpu, _ = data
+#        batch_size = real_cpu.size(0)
+#        if opt.cuda:
+#            real_cpu = real_cpu.cuda()
+#        input.resize_as_(real_cpu).copy_(real_cpu)
+#        label.resize_(batch_size).fill_(real_label)
+#        inputv = Variable(input)
+#        labelv = Variable(label)
+#
+#        output = netD(inputv)
+#        errD_real = criterion(output, labelv)
+#        errD_real.backward()
+#        D_x = output.data.mean()
+
+        # train with target data
         netD.zero_grad()
-        real_cpu, _ = data
-        batch_size = real_cpu.size(0)
+        target_cpu, _ = t_data
+        batch_size = target_cpu.size(0)
         if opt.cuda:
-            real_cpu = real_cpu.cuda()
-        input.resize_as_(real_cpu).copy_(real_cpu)
-        label.resize_(batch_size).fill_(real_label)
+            target_cpu = target_cpu.cuda()
+        input.resize_as_(target_cpu).copy_(target_cpu)
+        label.resize_(batch_size).fill_(target_label)
         inputv = Variable(input)
         labelv = Variable(label)
 
         output = netD(inputv)
-        errD_real = criterion(output, labelv)
-        errD_real.backward()
+        errD_target = criterion(output, labelv)
+        errD_target.backward()
         D_x = output.data.mean()
 
         # train with fake
         noise.resize_(batch_size, nz, 1, 1).normal_(0, 1)
+        source_cpu, _ = data
+        source_cpu.resize_(batch_size, ngf*ngf, 1, 1)
+        noise = np.concatenate((source_cpu, noise), 1)
         noisev = Variable(noise)
         fake = netG(noisev)
         labelv = Variable(label.fill_(fake_label))
@@ -261,23 +290,68 @@ for epoch in range(opt.niter):
         errD_fake = criterion(output, labelv)
         errD_fake.backward()
         D_G_z1 = output.data.mean()
-        errD = errD_real + errD_fake
+        errD = errD_target + errD_fake
         optimizerD.step()
 
         ############################
         # (2) Update G network: maximize log(D(G(z)))
         ###########################
         netG.zero_grad()
-        labelv = Variable(label.fill_(real_label))  # fake labels are real for generator cost
+        labelv = Variable(label.fill_(target_label))  # fake labels are real for generator cost
         output = netD(fake)
         errG = criterion(output, labelv)
         errG.backward()
         D_G_z2 = output.data.mean()
         optimizerG.step()
 
-        print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
+        #############################
+        # (3) Update T network
+        #############################
+        # train with source
+        netT.zero_grad()
+        source_cpu, source_label = data
+        batch_size = source_cpu.size(0)
+        if opt.cuda:
+            source_cpu = source_cpu.cuda()
+        input.resize_as_(source_cpu).copy_(source_cpu)
+        label.resize_(batch_size).fill_(source_label)
+        inputv = Variable(input)
+        labelv = Variable(label)
+
+        output = netT(inputv)
+        errT_source = criterion_T(output, labelv)
+        errT_source.backward()
+        T_x = output.data.mean()
+
+        # train with fake
+        noise.resize_(batch_size, nz, 1, 1).normal_(0, 1)
+        source_cpu, source_label = data
+        source_cpu.resize_(batch_size, ngf*ngf, 1, 1)
+        noise = np.concatenate((source_cpu, noise), 1)
+        noisev = Variable(noise)
+        fake = netG(noisev)
+        labelv = Variable(label.fill_(source_label))
+        output = netT(fake.detach())
+        errT_fake = criterion_T(output, labelv)
+        errT_fake.backward()
+        T_G_z1 = output.data.mean()
+        errT = errT_source + errT_fake
+        optimizerT.step()
+
+        ############################
+        # (4) Update G network
+        ############################
+        netG.zero_grad()
+        labelv = Variable(label.fill_(source_label))  # fake labels are real for generator cost
+        output = netT(fake.detach())
+        errG = criterion(output, labelv)
+        errG.backward()
+        G_z2 = output.data.mean()
+        optimizerG.step()
+
+        print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f Loss_T: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
               % (epoch, opt.niter, i, len(dataloader),
-                 errD.data[0], errG.data[0], D_x, D_G_z1, D_G_z2))
+                 errD.data[0], errG.data[0], errT.data[0], D_x, D_G_z1, D_G_z2))
         if i % 100 == 0:
             vutils.save_image(real_cpu,
                     '%s/real_samples.png' % opt.outf,
