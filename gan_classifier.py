@@ -14,6 +14,7 @@ import torchvision.utils as vutils
 from torch.autograd import Variable
 
 from mnistm_loader import *
+from usps_loader import *
 
 # Classifier
 from models import *
@@ -21,7 +22,9 @@ from models import *
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=True, help='cifar10 | lsun | imagenet | folder | lfw | fake')
+parser.add_argument('--target', required=True, help='mnist-m | usps')
 parser.add_argument('--dataroot', required=True, help='path to dataset')
+parser.add_argument('--targetroot', default='.', help='path to target dataset')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
 parser.add_argument('--batchSize', type=int, default=64, help='input batch size')
 parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')
@@ -95,6 +98,17 @@ elif opt.dataset == 'mnist':
 assert dataset
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
+
+if opt.target == 'usps':
+    target = USPS(root=opt.targetroot,
+                transform=transforms.Compose([
+                    transforms.Scale(opt.imageSize),
+                    transforms.ToTensor(),
+                    ]))
+
+assert target
+t_loader = torch.utils.data.DataLoader(target, batch_size=opt.batch_size,
+                                        shuffle=True, num_workers=int(opt.workers))
 
 ngpu = int(opt.ngpu)
 nz = int(opt.nz)
