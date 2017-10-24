@@ -131,10 +131,12 @@ class _netG(nn.Module):
     def __init__(self, ngpu):
         super(_netG, self).__init__()
         self.ngpu = ngpu
-        self.main = nn.Sequential(
+        self.fc = nn.Sequential(
             # fc layer
             nn.Linear(ngf*ngf+nz, nz),
-            nn.ReLU(True),
+            nn.ReLU(True)
+        )
+        self.main = nn.Sequential(
             # input is Z, going into a convolution
             nn.ConvTranspose2d(     nz, ngf * 8, 4, 1, 0, bias=False),
             nn.BatchNorm2d(ngf * 8),
@@ -159,9 +161,12 @@ class _netG(nn.Module):
 
     def forward(self, input):
         if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
-            output = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
+            temp = nn.parallel.data_parallel(self.fc, input, range(self.ngpu))
+            temp = temp.view(input.size(0), -1, 1, 1)
+            output = nn.parallel.data_parallel(self.main, temp, range(self.ngpu))
         else:
-            output = self.main(input)
+            temp = self.fc(input).view(input.size(0), -1, 1, 1)
+            output = self.main(temp)
         return output
 
 
@@ -221,7 +226,7 @@ criterion_T = nn.CrossEntropyLoss()
 input = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
 noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
 fixed_noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).normal_(0, 1)
-label = torch.FloatTensor(opt.batchSize)
+label = source_label = torch.FloatTensor(opt.batchSize)
 real_label = target_label = 1
 fake_label = 0
 
@@ -231,7 +236,7 @@ if opt.cuda:
     netT.cuda()
     criterion.cuda()
     criterion_T.cuda()
-    input, label = input.cuda(), label.cuda()
+    input, label, source_label = input.cuda(), label.cuda(), source_label.cuda()
     noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
 
 fixed_noise = Variable(fixed_noise)
@@ -279,10 +284,12 @@ for epoch in range(opt.niter):
         D_x = output.data.mean()
 
         # train with fake
-        noise.resize_(batch_size, nz, 1, 1).normal_(0, 1)
+        noise.resize_(batch_size, nz).normal_(0, 1)
         source_cpu, _ = data
-        source_cpu.resize_(batch_size, ngf*ngf, 1, 1)
-        noise = np.concatenate((source_cpu, noise), 1)
+        if opt.cuda:
+            source_cpu = source_cpu.cuda()
+        source_cpu.resize_(batch_size, ngf*ngf)
+        noise = torch.cat([source_cpu, noise], 1)
         noisev = Variable(noise)
         fake = netG(noisev)
         labelv = Variable(label.fill_(fake_label))
@@ -299,8 +306,8 @@ for epoch in range(opt.niter):
         netG.zero_grad()
         labelv = Variable(label.fill_(target_label))  # fake labels are real for generator cost
         output = netD(fake)
-        errG = criterion(output, labelv)
-        errG.backward()
+        errG_1 = criterion(output, labelv)
+        errG_1.backward()
         D_G_z2 = output.data.mean()
         optimizerG.step()
 
@@ -312,11 +319,10 @@ for epoch in range(opt.niter):
         source_cpu, source_label = data
         batch_size = source_cpu.size(0)
         if opt.cuda:
-            source_cpu = source_cpu.cuda()
+            source_cpu, source_label = source_cpu.cuda(), source_label.cuda()
         input.resize_as_(source_cpu).copy_(source_cpu)
-        label.resize_(batch_size).fill_(source_label)
         inputv = Variable(input)
-        labelv = Variable(label)
+        labelv = Variable(source_label)
 
         output = netT(inputv)
         errT_source = criterion_T(output, labelv)
@@ -324,13 +330,15 @@ for epoch in range(opt.niter):
         T_x = output.data.mean()
 
         # train with fake
-        noise.resize_(batch_size, nz, 1, 1).normal_(0, 1)
+        noise.resize_(batch_size, nz).normal_(0, 1)
         source_cpu, source_label = data
-        source_cpu.resize_(batch_size, ngf*ngf, 1, 1)
-        noise = np.concatenate((source_cpu, noise), 1)
+        if opt.cuda:
+            source_cpu, source_label = source_cpu.cuda(), source_label.cuda()
+        source_cpu.resize_(batch_size, ngf*ngf)
+        noise = torch.cat([source_cpu, noise], 1)
         noisev = Variable(noise)
         fake = netG(noisev)
-        labelv = Variable(label.fill_(source_label))
+        labelv = Variable(source_label)
         output = netT(fake.detach())
         errT_fake = criterion_T(output, labelv)
         errT_fake.backward()
@@ -342,10 +350,11 @@ for epoch in range(opt.niter):
         # (4) Update G network
         ############################
         netG.zero_grad()
-        labelv = Variable(label.fill_(source_label))  # fake labels are real for generator cost
+        labelv = Variable(source_label)  # fake labels are real for generator cost
         output = netT(fake.detach())
-        errG = criterion(output, labelv)
-        errG.backward()
+        errG_2 = criterion_T(output, labelv)
+        errG_2.backward()
+        errG = errG_1 + errG_2
         G_z2 = output.data.mean()
         optimizerG.step()
 
@@ -353,14 +362,22 @@ for epoch in range(opt.niter):
               % (epoch, opt.niter, i, len(dataloader),
                  errD.data[0], errG.data[0], errT.data[0], D_x, D_G_z1, D_G_z2))
         if i % 100 == 0:
-            vutils.save_image(real_cpu,
+            vutils.save_image(target_cpu,
                     '%s/real_samples.png' % opt.outf,
                     normalize=True)
-            fake = netG(fixed_noise)
+            
+            noise.resize_(batch_size, nz).normal_(0, 1)
+            source_cpu, source_label = data
+            if opt.cuda:
+                source_cpu, source_label = source_cpu.cuda(), source_label.cuda()
+            source_cpu.resize_(batch_size, ngf*ngf)
+            noise = torch.cat([source_cpu, noise], 1)
+            noisev = Variable(noise)
+            fake = netG(noisev)
             vutils.save_image(fake.data,
                     '%s/fake_samples_epoch_%03d.png' % (opt.outf, epoch),
                     normalize=True)
 
     # do checkpointing
-    torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.outf, epoch))
-    torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (opt.outf, epoch))
+    #torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.outf, epoch))
+    #torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (opt.outf, epoch))
