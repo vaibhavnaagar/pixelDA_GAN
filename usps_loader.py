@@ -6,10 +6,10 @@ import torchvision.transforms as transforms
 from scipy.io import loadmat
 
 class USPS(torch.utils.data.Dataset):
-    def __init__(self, data_dir, transform=None):
+    def __init__(self, train, data_dir, transform=None):
         self.transform = transform
-
-        file_path = os.path.abspath(os.path.join(data_dir, '../usps_resampled.mat'))
+        self.train = train
+        file_path = os.path.abspath(os.path.join(data_dir, 'usps_resampled.mat'))
         data = loadmat(file_path)
         X = np.concatenate((data['train_patterns'].T, data['test_patterns'].T))
         Y = np.concatenate((data['train_labels'].T, data['test_labels'].T))
@@ -26,4 +26,6 @@ class USPS(torch.utils.data.Dataset):
         return image, label
 
     def __len__(self):
-        return 10*self.length
+        if self.train:
+            return 10*self.length
+        return self.length
