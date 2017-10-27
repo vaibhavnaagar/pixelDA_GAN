@@ -18,7 +18,7 @@ from usps_loader import *
 
 # Classifier
 from models import *
-
+from utils import progress_bar
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=True, help='mnist | cifar10 | lsun | imagenet | folder | lfw | fake')
@@ -32,13 +32,16 @@ parser.add_argument('--nz', type=int, default=100, help='size of the latent z ve
 parser.add_argument('--ngf', type=int, default=64)
 parser.add_argument('--ndf', type=int, default=64)
 parser.add_argument('--niter', type=int, default=25, help='number of epochs to train for')
-parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
+parser.add_argument('--lr_gan', type=float, default=0.0002, help='learning rate, default=0.0002')
+parser.add_argument('--lr_clf', type=float, default=0.01, help='learning rate, default=0.01')
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
 parser.add_argument('--cuda', action='store_true', help='enables cuda')
 parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
 parser.add_argument('--netG', default='', help="path to netG (to continue training)")
 parser.add_argument('--netD', default='', help="path to netD (to continue training)")
-parser.add_argument('--outf', default='.', help='folder to output images and model checkpoints')
+parser.add_argument('--netT', default='', help="path to netT (to continue training)")
+parser.add_argument('--outf', default='.', help='folder to output images')
+parser.add_argument('--chkpt', default='checkpoint', help='folder to save model checkpoints')
 parser.add_argument('--manualSeed', type=int, help='manual seed')
 
 opt = parser.parse_args()
@@ -48,6 +51,9 @@ try:
     os.makedirs(opt.outf)
 except OSError:
     pass
+
+if not os.path.isdir(opt.chkpt):
+    os.mkdirs(opt.chkpt)
 
 if opt.manualSeed is None:
     opt.manualSeed = random.randint(1, 10000)
@@ -94,6 +100,7 @@ elif opt.dataset == 'mnist':
                          transform=transforms.Compose([
                             transforms.Scale(opt.imageSize),
                             transforms.ToTensor(),
+                            transforms.Normalize((0.1307,), (0.3081,)),
                          ]))
 assert dataset
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
@@ -102,9 +109,9 @@ dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
 if opt.target == 'usps':
     target = USPS(data_dir=opt.targetroot,
                 train=True,
+                image_size=opt.imageSize,
                 transform=transforms.Compose([
                     transforms.Scale(opt.imageSize),
-                    transforms.ToTensor(),
                     ]))
 
 assert target
@@ -115,12 +122,14 @@ t_loader = torch.utils.data.DataLoader(target, batch_size=opt.batchSize,
 # TEST loader
 test_target = USPS(data_dir=opt.targetroot,
             train=False,
+            image_size=opt.imageSize,
             transform=transforms.Compose([
                 transforms.Scale(opt.imageSize),
                 transforms.ToTensor(),
                 ]))
 
-test_loader = torch.utils.data.DataLoader(test_target, batch_size=opt.batchSize, num_workers=int(opt.workers))
+test_loader = torch.utils.data.DataLoader(test_target, batch_size=opt.batchSize,
+                                        num_workers=int(opt.workers))
 
 ngpu = int(opt.ngpu)
 nz = int(opt.nz)
@@ -181,14 +190,6 @@ class _netG(nn.Module):
             output = self.main(temp)
         return output
 
-
-netG = _netG(ngpu)
-netG.apply(weights_init)
-if opt.netG != '':
-    netG.load_state_dict(torch.load(opt.netG))
-print(netG)
-
-
 class _netD(nn.Module):
     def __init__(self, ngpu):
         super(_netD, self).__init__()
@@ -222,6 +223,11 @@ class _netD(nn.Module):
 
         return output.view(-1, 1).squeeze(1)
 
+netG = _netG(ngpu)
+netG.apply(weights_init)
+if opt.netG != '':
+    netG.load_state_dict(torch.load(opt.netG))
+print(netG)
 
 netD = _netD(ngpu)
 netD.apply(weights_init)
@@ -230,7 +236,15 @@ if opt.netD != '':
 print(netD)
 
 ##### Classifier #####
-netT = ResNet18()
+if opt.netT != '':
+    chk = orch.load(opt.netT)
+    netT = chk['netT']
+    best_acc = chk['acc']
+    netT_epoch = chk['epoch']
+else:
+    netT = ResNet18()
+    best_acc = 0
+    netT_epoch = 0
 
 criterion = nn.BCELoss()
 criterion_T = nn.CrossEntropyLoss()
@@ -254,14 +268,14 @@ if opt.cuda:
 # fixed_noise = Variable(fixed_noise)
 
 # setup optimizer
-optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-optimizerT = optim.SGD(netT.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
+optimizerD = optim.Adam(netD.parameters(), lr=opt.lr_gan, betas=(opt.beta1, 0.999))
+optimizerG = optim.Adam(netG.parameters(), lr=opt.lr_gan, betas=(opt.beta1, 0.999))
+optimizerT = optim.SGD(netT.parameters(), lr=opt.lr_clf, momentum=0.9, weight_decay=5e-4)
 
-best_acc = 0
 
-def test(epoch):
+def test(epoch, test_loader, save=True):
     global best_acc
+    epoch += netT_epoch + 1
     netT.eval()
     test_loss = 0
     correct = 0
@@ -280,12 +294,14 @@ def test(epoch):
         # print(targets.size(0))
         correct += predicted.eq(targets.data).cpu().sum()
 
-        print(batch_idx, len(test_loader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+        progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
             % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
-    print("Epoch: %d Final Accuracy: %f" % (epoch, 100.*correct/total))
+        # print(batch_idx, len(test_loader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+            # % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
+    # print("Epoch: %d Final Accuracy: %f" % (epoch, 100.*correct/total))
     # Save checkpoint.
     acc = 100.*correct/total
-    if acc > best_acc:
+    if save and (acc > best_acc):
         print('Saving..')
         print("Epoch:", epoch, "Accuracy:", acc)
         state = {
@@ -293,9 +309,7 @@ def test(epoch):
             'acc': acc,
             'epoch': epoch,
         }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/ckpt.t7')
+        torch.save(state, '%s/netT_epoch_%d.pth' %(opt.chkpt, epoch))
         best_acc = acc
 
 for epoch in range(opt.niter):
@@ -305,21 +319,6 @@ for epoch in range(opt.niter):
         ############################
         # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
         ###########################
-#        # train with real
-#        netD.zero_grad()
-#        real_cpu, _ = data
-#        batch_size = real_cpu.size(0)
-#        if opt.cuda:
-#            real_cpu = real_cpu.cuda()
-#        input.resize_as_(real_cpu).copy_(real_cpu)
-#        label.resize_(batch_size).fill_(real_label)
-#        inputv = Variable(input)
-#        labelv = Variable(label)
-#
-#        output = netD(inputv)
-#        errD_real = criterion(output, labelv)
-#        errD_real.backward()
-#        D_x = output.data.mean()
 
         # train with target data
         netD.zero_grad()
@@ -420,7 +419,7 @@ for epoch in range(opt.niter):
                  errD.data[0], errG.data[0], errT.data[0], D_x, D_G_z1, D_G_z2))
         if i % 100 == 0:
             vutils.save_image(target_cpu,
-                    '%s/real_samples.png' % opt.outf,
+                    '%s/real_samples.jpeg' % opt.outf,
                     normalize=True)
 
             # noise.resize_(batch_size, nz).normal_(0, 1)
@@ -432,14 +431,15 @@ for epoch in range(opt.niter):
             noisev = Variable(noisev)
             fake = netG(noisev)
             vutils.save_image(fake.data,
-                    '%s/fake_samples_epoch_%03d.png' % (opt.outf, epoch),
+                    '%s/fake_samples_epoch_%03d.jpeg' % (opt.outf, epoch),
                     normalize=True)
 
-    test(epoch)
+    print("Testing on MNIST dataset")
+    test(epoch, dataloader, save=False)
+    print("Testing on USPS dataset")
+    test(epoch, test_loader)
 
     # do checkpointing
-    #torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.outf, epoch))
-    #torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (opt.outf, epoch))
+    torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.chkpt, epoch + netT_epoch + 1))
+    torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (opt.chkpt, epoch + netT_epoch + 1))
 print("TRAINING DONE!")
-
-test(-1)
