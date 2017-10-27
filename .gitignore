@@ -1,5 +1,7 @@
 __pycache__
 data
 data/*
+images
+images/*
 checkpoint
 checkpoint/*
