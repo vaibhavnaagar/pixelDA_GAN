@@ -9,7 +9,7 @@ import os
 import matplotlib.pyplot as plt
 
 
-class MNIST_M_DATA(torch.utils.data.Dataset):
+class MNIST_M(torch.utils.data.Dataset):
     def __init__(self, root_dir, train, transform=None):
         self.root_dir = root_dir
         self.train = train
@@ -24,7 +24,7 @@ class MNIST_M_DATA(torch.utils.data.Dataset):
         with open(labels_file, "r") as fp:
         	content = fp.readlines()
         self.mapping = list(map(lambda x: (x[0], int(x[1])), [c.strip().split() for c in content]))
-        
+
     def __len__(self):
         return len(self.mapping)
 
@@ -40,8 +40,8 @@ if __name__ == '__main__':
 	root_dir = 'data/mnist_m'
 	batch_size = 10
 	composed_transform = transforms.Compose([transforms.Scale((224,224)),transforms.ToTensor()])
-	train_dataset = MNIST_M_DATA(root_dir=root_dir, train=True, transform=composed_transform)
-	test_dataset = MNIST_M_DATA(root_dir=root_dir, train=False, transform=composed_transform)
+	train_dataset = MNIST_M(root_dir=root_dir, train=True, transform=composed_transform)
+	test_dataset = MNIST_M(root_dir=root_dir, train=False, transform=composed_transform)
 
 	print('Size of train dataset: %d' % len(train_dataset))
 	print('Size of test dataset: %d' % len(test_dataset))
@@ -53,7 +53,7 @@ if __name__ == '__main__':
 	    npimg = img.numpy()
 	    plt.imshow(np.transpose(npimg, (1, 2, 0)))
 	    # plt.show()
-	    
+
 	train_dataiter = iter(train_loader)
 	train_images, train_labels = train_dataiter.next()
 	print("Train images", train_images)

@@ -9,3 +9,4 @@ from .googlenet import *
 from .mobilenet import *
 from .shufflenet import *
 from .preact_resnet import *
+from .mnist_classifier import *

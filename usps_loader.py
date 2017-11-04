@@ -22,7 +22,7 @@ class USPS(torch.utils.data.Dataset):
         self.mapping = [(X[i].reshape(dim, dim), np.where(Y[i]==1)[0][0]) for i in range(self.length)]
 
     def __getitem__(self, index):
-        (image, label) = self.mapping[index % self.length]
+        (image, label) = self.mapping[index]
         image = PIL.Image.fromarray(image)
         if self.transform is not None:
             image = self.transform(image)
@@ -31,8 +31,8 @@ class USPS(torch.utils.data.Dataset):
         return image, label
 
     def __len__(self):
-        if self.train:
-            return 10*self.length
+        # if self.train:
+        #     return self.length
         return self.length
 
 if __name__ == '__main__':
