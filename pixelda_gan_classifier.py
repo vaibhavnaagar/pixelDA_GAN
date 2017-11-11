@@ -110,7 +110,7 @@ lr_scheduler_T = optim.lr_scheduler.StepLR(optimizerT, step_size=opt.lr_decay_st
 
 lr_schedulers = [lr_scheduler_D, lr_scheduler_G, lr_scheduler_T]
 
-def test(epoch, test_loader, save=True):
+def test(epoch, test_loader, save=True, dataset="target"):
     global best_acc
     epoch += netT_epoch + 1
     netT.eval()
@@ -121,7 +121,7 @@ def test(epoch, test_loader, save=True):
         if opt.cuda:
             inputs, targets = inputs.cuda(), targets.cuda()
         inputs, targets = Variable(inputs, volatile=True), Variable(targets)
-        outputs = netT(inputs=inputs, dataset="target")
+        outputs = netT(inputs=inputs, dataset=dataset)
 
         loss = criterion_T(outputs, targets)
 
@@ -289,9 +289,9 @@ for epoch in range(opt.niter):
 
     if epoch % 5 == 0:
         print("Testing on MNIST dataset")
-        test(epoch, source_train_loader, save=False)
+        test(epoch, source_train_loader, save=False, dataset="source")
     print("Testing on USPS dataset")
-    test(epoch, target_test_loader)
+    test(epoch, target_test_loader, , dataset="target")
 
     # do checkpointing
     torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.chkpt, epoch + netT_epoch + 1))
