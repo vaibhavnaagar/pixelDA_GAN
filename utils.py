@@ -46,7 +46,8 @@ def init_params(net):
             init.constant(m.weight, 1)
             init.constant(m.bias, 0)
         elif isinstance(m, nn.Linear):
-            init.normal(m.weight, std=1e-3)
+            # init.normal(m.weight, std=1e-3)
+            init.xavier_normal(m.weight)
             if m.bias is not None:
                 init.constant(m.bias, 0)
 

@@ -37,12 +37,12 @@ def get_dataset(dataset, root_dir, imageSize, batchSize, workers=1):
                                     transforms.Normalize((0.1307,), (0.3081,)),
                                     ]))
     elif dataset == 'mnistm':
-        train_dataset = MNIST_M(data_dir=root_dir, train=True,
+        train_dataset = MNIST_M(root_dir=root_dir, train=True,
                                  transform=transforms.Compose([
                                  transforms.Scale(imageSize),
                                  transforms.ToTensor(),
                                  ]))
-        test_dataset = MNIST_M(data_dir=root_dir, train=False,
+        test_dataset = MNIST_M(root_dir=root_dir, train=False,
                                  transform=transforms.Compose([
                                  transforms.Scale(imageSize),
                                  transforms.ToTensor(),

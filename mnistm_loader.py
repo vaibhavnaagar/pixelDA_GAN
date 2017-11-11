@@ -31,7 +31,6 @@ class MNIST_M(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         image, label = self.mapping[idx]
         image = os.path.join(self.image_dir, image)
-        print(np.array(Image.open(image).convert('RGB').getdata()).shape)
         image = self.transform(Image.open(image).convert('RGB'))
         return image, label
 

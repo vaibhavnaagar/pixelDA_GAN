@@ -48,14 +48,14 @@ target_channels = 1 if opt.targetDataset in ['mnist', 'usps'] else 3
 num_classes = 10
 
 ##### Generator #####
-netG = pixelda_G(out_channels=target_channels, image_size=[imageSize, imageSize, 1], opt=opt)
+netG = pixelda_G(out_channels=target_channels, image_size=[imageSize, imageSize, source_channels], opt=opt)
 netG.apply(weights_init)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
 ##### Discrminator #####
-netD = pixelda_D(in_channels=target_channels, image_size=[imageSize, imageSize, 1], opt=opt)
+netD = pixelda_D(in_channels=target_channels, image_size=[imageSize, imageSize, target_channels], opt=opt)
 netD.apply(weights_init)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
