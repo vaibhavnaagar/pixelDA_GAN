@@ -13,8 +13,8 @@ class MnistClassifier(nn.Module):
         self.ngpu = ngpu
         self.private_source = nn.Sequential(
             # batch_size x source_channels x 64 x 64
-            nn.Conv2d(source_channels, 32, kernel_size=5, stride=1, padding=2),
-            nn.Relu(True),
+            nn.Conv2d(source_channels, 32, kernel_size=5, stride=1, padding=2, bias=True),
+            nn.ReLU(True),
             # batch_size x 32 x 64 x 64
             nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
             # batch_size x 32 x 32 x 32
@@ -22,7 +22,7 @@ class MnistClassifier(nn.Module):
         self.private_target = nn.Sequential(
             # batch_size x source_channels x 64 x 64
             nn.Conv2d(target_channels, 32, kernel_size=5, stride=1, padding=2),
-            nn.Relu(True),
+            nn.ReLU(True),
             # batch_size x 32 x 64 x 64
             nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
             # batch_size x 32 x 32 x 32
@@ -30,7 +30,7 @@ class MnistClassifier(nn.Module):
         self.shared_convs = nn.Sequential(
             # batch_size x 32 x 32 x 32
             nn.Conv2d(32, 48, kernel_size=5, stride=1, padding=2),
-            nn.Relu(True),
+            nn.ReLU(True),
             # batch_size x 48 x 32 x 32
             nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
             # batch_size x 48 x 16 x 16
@@ -38,10 +38,10 @@ class MnistClassifier(nn.Module):
         self.shared_fcs = nn.Sequential(
             # batch_size x (48*16*16 = 12288)
             nn.Linear(12288, 100),
-            nn.Relu(True),
+            nn.ReLU(True),
             # batch_size x 100
             nn.Linear(100, 100),
-            nn.Relu(True),
+            nn.ReLU(True),
             # batch_size x 100
             nn.Linear(100, num_classes)
         )

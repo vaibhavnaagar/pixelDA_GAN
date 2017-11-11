@@ -18,7 +18,8 @@ from GANs import *
 ## Import Classifiers ##
 from classifiers import *
 from utils import progress_bar, init_params, weights_init
-
+from params import get_params
+from dataset import get_dataset
 
 opt = get_params()
 print(opt)
@@ -67,15 +68,16 @@ if opt.netT != '':
     best_acc = chk['acc']
     netT_epoch = chk['epoch']
 else:
+    # netT = ResNet18()
     netT = MnistClassifier(source_channels, target_channels, num_classes, opt.ngpu)
     init_params(netT)
     best_acc = 0
     netT_epoch = 0
 print(netT)
 
-criterion_D = nn.BCEWithLogitsLoss(weight=opt.domain_loss_wt)
-criterion_G = nn.BCEWithLogitsLoss(weight=opt.style_transfer_loss_wt)
-criterion_T = nn.CrossEntropyLoss(weight=opt.task_loss_wt)
+criterion_D = nn.BCEWithLogitsLoss()
+criterion_G = nn.BCEWithLogitsLoss()
+criterion_T = nn.CrossEntropyLoss()
 
 inputs = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
 noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
@@ -182,10 +184,10 @@ for epoch in range(opt.niter):
         # inputs.resize_as_(target_cpu).copy_(target_cpu)
         inputv = Variable(target_cpu)
         output = netD(inputs=inputv)
-        label.resize_(batch_size).fill_(real_label)
+        label.resize_(output.size()).fill_(real_label)
         labelv = Variable(label)
-        errD_target = criterion_D(output, labelv)
-        errD_target.backward()
+        errD_target = criterion_D(output, labelv) * opt.domain_loss_wt
+        errD_target.backward(retain_graph=True)
         D_x = output.data.mean()
 
         ## Source Batch ##
@@ -201,9 +203,9 @@ for epoch in range(opt.niter):
         inputv = Variable(source_cpu)
         fake = netG(inputs=inputv, noise_vector=noisev)
         output = netD(inputs=fake.detach())
-        label.resize_(batch_size).fill_(fake_label)
+        label.resize_(output.size()).fill_(fake_label)
         labelv = Variable(label)
-        errD_fake = criterion_D(output, labelv)
+        errD_fake = criterion_D(output, labelv) * opt.domain_loss_wt
         errD_fake.backward()
         D_G_z1 = output.data.mean()
         errD = errD_target + errD_fake
@@ -220,13 +222,13 @@ for epoch in range(opt.niter):
         inputv = Variable(source_cpu)
         labelv = Variable(source_label)
         output = netT(inputs=inputv, dataset="source")
-        errT_source = criterion_T(output, labelv)
-        errT_source.backward()
+        errT_source = criterion_T(output, labelv) * opt.task_loss_wt
+        errT_source.backward(retain_graph=True)
         # T_x = output.data.mean()
 
         ## Train with fake ##
         output = netT(inputs=fake.detach(), dataset="target")
-        errT_fake = criterion_T(output, labelv)     # Same Label as of source images
+        errT_fake = criterion_T(output, labelv) * opt.task_loss_wt     # Same Label as of source images
         errT_fake.backward()
         errT = errT_source + errT_fake
 
@@ -238,6 +240,8 @@ for epoch in range(opt.niter):
         # (3) Update G network: maximize log(D(G(z))) #
         ################################################
         netG.zero_grad()
+        netT.zero_grad()
+        netD.zero_grad()
 
         ## Generator loss due to discriminator ##
         # Sampling from Uniform Distribution as per the paper #
@@ -246,10 +250,10 @@ for epoch in range(opt.niter):
         inputv = Variable(source_cpu)
         fake = netG(inputs=inputv, noise_vector=noisev)
         output = netD(inputs=fake)
-        label.resize_(batch_size).fill_(real_label)
+        label.resize_(output.size()).fill_(real_label)
         labelv = Variable(label)  # fake labels are real for generator cost
-        errG_d = criterion_G(output, labelv)
-        errG_d.backward()
+        errG_d = criterion_G(output, labelv) * opt.style_transfer_loss_wt
+        errG_d.backward(retain_graph=True)
         D_G_z2 = output.data.mean()
 
         ## Generator loss due to task specific loss ##
@@ -283,11 +287,11 @@ for epoch in range(opt.niter):
                     '%s/fake_samples_epoch_%03d.jpeg' % (opt.outf, epoch + netT_epoch + 1),
                     normalize=True)
 
-    # if epoch % 5 == 0:
-        # print("Testing on MNIST dataset")
-        # test(epoch, source_train_loader, save=False)
-    # print("Testing on USPS dataset")
-    # test(epoch, target_test_loader)
+    if epoch % 5 == 0:
+        print("Testing on MNIST dataset")
+        test(epoch, source_train_loader, save=False)
+    print("Testing on USPS dataset")
+    test(epoch, target_test_loader)
 
     # do checkpointing
     torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.chkpt, epoch + netT_epoch + 1))

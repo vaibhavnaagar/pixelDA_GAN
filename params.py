@@ -17,7 +17,7 @@ def get_params():
     parser.add_argument('--sourceroot', required=True, help='path to source dataset')
     parser.add_argument('--targetroot', default='.', help='path to target dataset')
     parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
-    parser.add_argument('--batchSize', type=int, default=64, help='input batch size')
+    parser.add_argument('--batchSize', type=int, default=32, help='input batch size')
     parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')
     parser.add_argument('--nz', type=int, default=10, help='size of the latent z vector')
     parser.add_argument('--niter', type=int, default=25, help='number of epochs to train for')

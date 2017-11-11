@@ -8,6 +8,8 @@ Reference:
 import torch
 import torch.nn as nn
 import numpy as np
+from torch.autograd import Variable
+
 
 class project_noise(nn.Module):
     def __init__(self, in_features, out_features, ngpu=1):
@@ -17,7 +19,7 @@ class project_noise(nn.Module):
             # batch_size x in_features
             nn.Linear(in_features, out_features),
             nn.BatchNorm1d(out_features),
-            nn.Relu(True)
+            nn.ReLU(True)
             # batch_size x out_features
         )
 
@@ -37,7 +39,7 @@ class residual_block(nn.Module):
             # batch_size x in_channels x 64 x 64
             nn.Conv2d(in_channels, filters, kernel_size=kernel_size, stride=stride, padding=padding, bias=False),
             nn.BatchNorm2d(filters),
-            nn.Relu(True),
+            nn.ReLU(True),
             nn.Conv2d(filters, filters, kernel_size=kernel_size, stride=stride, padding=padding, bias=False),
             nn.BatchNorm2d(filters)
             # batch_size x filters x 64 x 64
@@ -66,17 +68,17 @@ class pixelda_G(nn.Module):
         noise_channels = opt.G_noise_channels
         filters = opt.ngf
         self.noise_size = [noise_channels] + image_size[:2]
-        self.noise_layer = project_noise(opt.G_noise_dim, np.prod(self.noise_size), ngpu=ngpu)
+        self.noise_layer = project_noise(opt.G_noise_dim, int(np.prod(self.noise_size)), ngpu=opt.ngpu)
         blocks = []
-        for block in range(opt.residual_blocks):
-            blocks.append(residual_block(filters, filters, ngpu, kernel_size, stride, padding))
+        for block in range(opt.G_residual_blocks):
+            blocks.append(residual_block(filters, filters, opt.ngpu, kernel_size, stride, padding))
         self.main = nn.Sequential(
             # batch_size x (image_channels + noise_channels) x H x W
             nn.Conv2d(image_size[-1]+noise_channels, filters, kernel_size=kernel_size, stride=stride, padding=padding, bias=True),
-            nn.Relu(True),
+            nn.ReLU(True),
             *blocks,
             nn.Conv2d(filters, out_channels, kernel_size=1, stride=1, padding=0, bias=True),
-            nn.Tanh(True)
+            nn.Tanh()
             # batch_size x out_channels x H x W
         )
 
@@ -119,25 +121,30 @@ class conv_block(nn.Module):
 
 
 class inject_noise(nn.Module):
-    def __init__(self, dropout=False, opt):
+    def __init__(self, opt, dropout=False):
         super(inject_noise, self).__init__()
         self.ngpu = opt.ngpu
-        self.noise_mean = opt.noise_mean
-        self.noise_stddev = opt.noise_stddev
+        self.noise_mean = opt.D_noise_mean
+        self.noise_stddev = opt.D_noise_stddev
         self.dropout = nn.Sequential()
         if dropout:
-            self.dropout = nn.Dropout(opt.keep_prob, inplace=True)
+            self.dropout = nn.Dropout(opt.D_keep_prob, inplace=True)
         self.noise = torch.FloatTensor()
+        if opt.cuda:
+            self.noise = self.noise.cuda()
 
     def forward(self, inputs):
         if isinstance(inputs.data, torch.cuda.FloatTensor) and self.ngpu > 1:
             output = nn.parallel.data_parallel(self.dropout, inputs, range(self.ngpu))
-            if noise_stddev != 0
-                output += self.noise.resize_as_(output).normal_(self.noise_mean, self.noise_stddev)
+            if self.noise_stddev != 0:
+                n = Variable(self.noise.resize_(output.size()).normal_(self.noise_mean, self.noise_stddev))
+                output += n
         else:
             output = self.dropout(inputs)
-            if noise_stddev != 0
-                output += self.noise.resize_as_(output).normal_(self.noise_mean, self.noise_stddev)
+            # print(output.size())
+            if self.noise_stddev != 0:
+                n = Variable(self.noise.resize_(output.size()).normal_(self.noise_mean, self.noise_stddev))
+                output += n
         return output
 
 
@@ -153,7 +160,7 @@ class pixelda_D(nn.Module):
             # batch_size x in_channels x 64 x 64
             nn.Conv2d(in_channels, opt.ndf, kernel_size=3, stride=1, padding=1, bias=True),
             # nn.BatchNorm2d(opt.ndf),
-            nn.LeakyReLU(self.leakiness, inplace=True),
+            nn.LeakyReLU(opt.leakiness, inplace=True),
             *layers
         )
         self.fully_connected = nn.Linear(projection_size*projection_size*out_channels, 1)
@@ -165,15 +172,15 @@ class pixelda_D(nn.Module):
         out_channels = in_channels
         while feature_map > projection_size:
             out_channels = in_channels * 2
-            for _ in range(1, opt.conv_block_size):
-                layers.append(conv_block(in_channels, out_channels, opt.ngpu,
-                              kernel_size=3, stride=1, padding=1, opt.leakiness))
+            for _ in range(1, opt.D_conv_block_size):
+                layers.append(conv_block(in_channels, out_channels, ngpu=opt.ngpu,
+                              kernel_size=3, stride=1, padding=1, leakiness=opt.leakiness))
                 in_channels = out_channels
             layers.append(conv_block(in_channels, out_channels, opt.ngpu,
                           self.kernel_size, self.stride, self.padding, opt.leakiness))
-            layers.append(inject_noise(dropout=True, opt))
+            layers.append(inject_noise(opt, dropout=True))
             in_channels = out_channels
-            feature_map = np.floor(np.divide(feature_map + 2*self.padding - self.kernel_size, self.stride) + 1).astype(int)
+            feature_map = int(np.floor(np.divide(feature_map + 2*self.padding - self.kernel_size, self.stride) + 1))
 
         assert feature_map == projection_size
         return layers, out_channels, feature_map
