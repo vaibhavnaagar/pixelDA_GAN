@@ -288,9 +288,9 @@ for epoch in range(opt.niter):
                     normalize=True)
 
     if epoch % 5 == 0:
-        print("Testing on MNIST dataset")
+        print("Testing on %s dataset" % (opt.sourceDataset))
         test(epoch, source_train_loader, save=False, dataset="source")
-    print("Testing on USPS dataset")
+    print("Testing on %s dataset" % (opt.targetDataset))
     test(epoch, target_test_loader, , dataset="target")
 
     # do checkpointing
