@@ -5,8 +5,7 @@ import torchvision.transforms as transforms
 
 
 ## Import Data Loaders ##
-from mnistm_loader import *
-from usps_loader import *
+from dataloader import *
 
 
 def get_dataset(dataset, root_dir, imageSize, batchSize, workers=1):
@@ -41,11 +40,13 @@ def get_dataset(dataset, root_dir, imageSize, batchSize, workers=1):
                                  transform=transforms.Compose([
                                  transforms.Scale(imageSize),
                                  transforms.ToTensor(),
+                                #  transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                                  ]))
         test_dataset = MNIST_M(root_dir=root_dir, train=False,
                                  transform=transforms.Compose([
                                  transforms.Scale(imageSize),
                                  transforms.ToTensor(),
+                                #  transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                                  ]))
     elif dataset == 'usps':
         train_dataset = USPS(data_dir=root_dir, train=True,

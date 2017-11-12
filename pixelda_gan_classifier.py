@@ -101,7 +101,7 @@ if opt.cuda:
 # setup optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr_gan, betas=(opt.beta1, 0.999), weight_decay=opt.weight_decay)
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr_gan, betas=(opt.beta1, 0.999), weight_decay=opt.weight_decay)
-optimizerT = optim.Adam(netG.parameters(), lr=opt.lr_clf, betas=(opt.beta1, 0.999), weight_decay=opt.weight_decay)
+optimizerT = optim.Adam(netT.parameters(), lr=opt.lr_clf, betas=(opt.beta1, 0.999), weight_decay=opt.weight_decay)
 # optimizerT = optim.SGD(netT.parameters(), lr=opt.lr_clf, momentum=0.9, weight_decay=5e-4)
 
 lr_scheduler_D = optim.lr_scheduler.StepLR(optimizerD, step_size=opt.lr_decay_step, gamma=opt.lr_decay_rate)
@@ -291,7 +291,7 @@ for epoch in range(opt.niter):
         print("Testing on %s dataset" % (opt.sourceDataset))
         test(epoch, source_train_loader, save=False, dataset="source")
     print("Testing on %s dataset" % (opt.targetDataset))
-    test(epoch, target_test_loader, , dataset="target")
+    test(epoch, target_test_loader, dataset="target")
 
     # do checkpointing
     torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.chkpt, epoch + netT_epoch + 1))
