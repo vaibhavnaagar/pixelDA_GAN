@@ -7,3 +7,4 @@ checkpoint
 checkpoint/*
 plots
 plots/*
+*.log

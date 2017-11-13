@@ -39,10 +39,10 @@ if torch.cuda.is_available() and not opt.cuda:
 
 ## Logger ##
 logger = logging.getLogger()
-file_log_handler = logger.FileHandler(opt.logfile)
+file_log_handler = logging.FileHandler(opt.logfile)
 logger.addHandler(file_log_handler)
 
-stderr_log_handler = logger.StreamHandler()
+stderr_log_handler = logging.StreamHandler()
 logger.addHandler(stderr_log_handler)
 
 logger.setLevel('DEBUG')
@@ -141,7 +141,7 @@ lr_scheduler_T = optim.lr_scheduler.StepLR(optimizerT, step_size=opt.lr_decay_st
 
 lr_schedulers = [lr_scheduler_D, lr_scheduler_G, lr_scheduler_T]
 
-def test(epoch, test_loader, save=True, dataset="target"):
+def test(epoch, test_loader, save=True, dataset="target", is_plot=False):
     global best_acc
     epoch += netT_epoch + 1
     netT.eval()
@@ -169,12 +169,12 @@ def test(epoch, test_loader, save=True, dataset="target"):
     logger.info('Epoch: %d | Loss: %.3f | Acc: %.3f%% (%d/%d)'
                 % (epoch, test_loss/len(test_loader), acc, correct, total))
     logger.info('======================================================')
-    if epoch > -1:
+    if is_plot:
         p = plot_target_acc if dataset == "target" else plot_source_acc
         p((epoch, acc))
     if save and (acc > best_acc):
         logger.info('Saving..')
-        logger.info("Epoch:", epoch, "Accuracy:", acc)
+        logger.info("Epoch: %d Accuracy: %.3f%%" % (epoch, acc))
         state = {
             'net': netT, #.module if use_cuda else net,
             'acc': acc,
@@ -189,6 +189,7 @@ def test(epoch, test_loader, save=True, dataset="target"):
 # test(-1, target_test_loader)
 
 target_data_iter = iter(target_train_loader)
+iterations = 0
 
 for epoch in range(opt.niter):
     netT.train()
@@ -303,13 +304,15 @@ for epoch in range(opt.niter):
         ## Update G's params ##
         optimizerG.step()
 
-        plot_gan_loss((i, errG.data[0]), (i, errD.data[0]))
-        plot_clf_loss((i, errT.data[0]))
+        plot_gan_loss((iterations, errG.data[0]), (iterations, errD.data[0]))
+        plot_clf_loss((iterations, errT.data[0]))
 
         logger.info('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f Loss_T: %.4f D(x): %.4f D(G(z)): %.4f / %.4f | Best Acc: %3f%%'
               % (epoch, opt.niter, i, len(source_train_loader),
                  errD.data[0], errG.data[0], errT.data[0], D_x, D_G_z1, D_G_z2, best_acc))
-        if i % 100 == 0:
+
+        iterations += 1
+        if (i % 100 == 0) or ((i+1) == len(source_train_loader)):
             vutils.save_image(target_cpu,
                     '%s/real_samples_target_epoch_%03d.jpeg' % (opt.outf, epoch + netT_epoch + 1),
                     normalize=True)
@@ -327,13 +330,12 @@ for epoch in range(opt.niter):
                     '%s/fake_samples_epoch_%03d.jpeg' % (opt.outf, epoch + netT_epoch + 1),
                     normalize=True)
 
-    if epoch % 5 == 0:
-        logger.info("Testing on %s training dataset" % (opt.sourceDataset))
-        test(epoch, source_train_loader, save=False, dataset="source")
-        logger.info("Testing on %s test dataset" % (opt.targetDataset))
-        test(epoch, target_test_loader, save=False, dataset="target")
+    logger.info("Testing on %s training dataset" % (opt.sourceDataset))
+    test(epoch, source_train_loader, save=False, dataset="source", is_plot=True)
+    logger.info("Testing on %s test dataset" % (opt.targetDataset))
+    test(epoch, target_test_loader, save=False, dataset="target")
     logger.info("Testing on %s train dataset" % (opt.targetDataset))
-    test(epoch, target_train_loader, dataset="target")      # Use train dataset for validation on classifer
+    test(epoch, target_train_loader, dataset="target", is_plot=True)   # Use train dataset for validation on classifer
 
     # do checkpointing
     torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.chkpt, epoch + netT_epoch + 1))
