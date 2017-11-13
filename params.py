@@ -24,6 +24,7 @@ def get_params():
     parser.add_argument('--cuda', action='store_true', help='enables cuda')
     parser.add_argument('--manualSeed', type=int, default=9926, help='manual seed')
     parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
+    parser.add_argument('--logfile', default='model.log', help='Log file name (including path)')
 
     ## Saved model and images and checkpoint paths ##
     parser.add_argument('--netG', default='', help="path to netG (to continue training)")
@@ -31,6 +32,7 @@ def get_params():
     parser.add_argument('--netT', default='', help="path to netT (to continue training)")
     parser.add_argument('--outf', default='.', help='folder to output images')
     parser.add_argument('--chkpt', default='checkpoint', help='folder to save model checkpoints')
+    parser.add_argument('--plotdir', default='plots', help='Path to save plots')
 
     ## Discrminator hyper-parameters ##
     parser.add_argument('--ndf', type=int, default=64, help='number of discriminator filters')
@@ -62,7 +64,7 @@ def get_params():
 
 
     opt = parser.parse_args()
-    check_dirs([opt.outf, opt.chkpt])
+    check_dirs([opt.outf, opt.chkpt, opt.plotdir])
     if opt.manualSeed is None:
         opt.manualSeed = random.randint(1, 10000)
 

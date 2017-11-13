@@ -5,3 +5,5 @@ images
 images/*
 checkpoint
 checkpoint/*
+plots
+plots/*

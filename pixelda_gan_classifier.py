@@ -11,6 +11,7 @@ import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
 from torch.autograd import Variable
+import logging
 
 ## Import GANs ##
 from GANs import *
@@ -20,6 +21,8 @@ from classifiers import *
 from utils import progress_bar, init_params, weights_init
 from params import get_params
 from dataset import get_dataset
+from plotter import Plotter
+
 
 opt = get_params()
 print(opt)
@@ -33,6 +36,19 @@ cudnn.benchmark = True
 
 if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
+
+## Logger ##
+logger = logging.getLogger()
+file_log_handler = logger.FileHandler(opt.logfile)
+logger.addHandler(file_log_handler)
+
+stderr_log_handler = logger.StreamHandler()
+logger.addHandler(stderr_log_handler)
+
+logger.setLevel('DEBUG')
+formatter = logging.Formatter()
+file_log_handler.setFormatter(formatter)
+stderr_log_handler.setFormatter(formatter)
 
 ## Data Loaders ##
 source_train_loader, source_test_loader = get_dataset(dataset=opt.sourceDataset, root_dir=opt.sourceroot,
@@ -99,8 +115,19 @@ if opt.cuda:
 # fixed_noise = Variable(fixed_noise)
 
 # Plotters
-plot_gan_loss = Plotter("gan_loss.jpeg", num_lines=2, legends=["g_loss", "d_loss"],
-                      xlabel="Number of iterations", ylabel="Loss", title="Loss vs Iterations")
+plot_gan_loss = Plotter("%s/gan_loss.jpeg" % (opt.plotdir), num_lines=2, legends=["g_loss", "d_loss"],
+    xlabel="Number of iterations", ylabel="Loss", title="GAN Loss vs Iterations(%s->%s)" %(opt.sourceDataset, opt.targetDataset))
+
+plot_clf_loss = Plotter("%s/%s_clf_loss.jpeg" % (opt.plotdir, opt.sourceDataset), num_lines=1, legends=[""],
+    xlabel="Number of iterations", ylabel="Loss", title="Classifier loss vs Iterations(%s->%s)" %(opt.sourceDataset, opt.targetDataset))
+
+plot_source_acc = Plotter("%s/%s_clf_acc.jpeg" % (opt.plotdir, opt.sourceDataset), num_lines=1, legends=[""],
+    xlabel="Epochs", ylabel="Accuracy", title="Accuracy vs Epochs(%s->%s)" %(opt.sourceDataset, opt.targetDataset))
+
+plot_target_acc = Plotter("%s/%s_clf_acc.jpeg" % (opt.plotdir, opt.targetDataset), num_lines=1, legends=[""],
+    xlabel="Epochs", ylabel="Accuracy", title="Accuracy vs Epochs(%s->%s)" %(opt.sourceDataset, opt.targetDataset))
+
+plotters = [plot_gan_loss, plot_clf_loss, plot_source_acc, plot_target_acc]
 
 # setup optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr_gan, betas=(opt.beta1, 0.999), weight_decay=opt.weight_decay)
@@ -134,14 +161,20 @@ def test(epoch, test_loader, save=True, dataset="target"):
         total += targets.size(0)
         # print(targets.size(0))
         correct += predicted.eq(targets.data).cpu().sum()
-
         progress_bar(batch_idx, len(test_loader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
-            % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
+                     % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
     # Save checkpoint.
     acc = 100.*correct/total
+    logger.info('======================================================')
+    logger.info('Epoch: %d | Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                % (epoch, test_loss/len(test_loader), acc, correct, total))
+    logger.info('======================================================')
+    if epoch > -1:
+        p = plot_target_acc if dataset == "target" else plot_source_acc
+        p((epoch, acc))
     if save and (acc > best_acc):
-        print('Saving..')
-        print("Epoch:", epoch, "Accuracy:", acc)
+        logger.info('Saving..')
+        logger.info("Epoch:", epoch, "Accuracy:", acc)
         state = {
             'net': netT, #.module if use_cuda else net,
             'acc': acc,
@@ -165,7 +198,7 @@ for epoch in range(opt.niter):
     for i, source_data in enumerate(source_train_loader, 0):
         map(lambda scheduler: scheduler.step(), lr_schedulers)
 
-        # Idefinitely looping over target data loader #
+        # Idefinitely loop over target data loader #
         try:
             target_data = target_data_iter.next()
         except StopIteration:
@@ -270,9 +303,12 @@ for epoch in range(opt.niter):
         ## Update G's params ##
         optimizerG.step()
 
-        print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f Loss_T: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
+        plot_gan_loss((i, errG.data[0]), (i, errD.data[0]))
+        plot_clf_loss((i, errT.data[0]))
+
+        logger.info('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f Loss_T: %.4f D(x): %.4f D(G(z)): %.4f / %.4f | Best Acc: %3f%%'
               % (epoch, opt.niter, i, len(source_train_loader),
-                 errD.data[0], errG.data[0], errT.data[0], D_x, D_G_z1, D_G_z2))
+                 errD.data[0], errG.data[0], errT.data[0], D_x, D_G_z1, D_G_z2, best_acc))
         if i % 100 == 0:
             vutils.save_image(target_cpu,
                     '%s/real_samples_target_epoch_%03d.jpeg' % (opt.outf, epoch + netT_epoch + 1),
@@ -292,12 +328,25 @@ for epoch in range(opt.niter):
                     normalize=True)
 
     if epoch % 5 == 0:
-        print("Testing on %s dataset" % (opt.sourceDataset))
+        logger.info("Testing on %s training dataset" % (opt.sourceDataset))
         test(epoch, source_train_loader, save=False, dataset="source")
-    print("Testing on %s dataset" % (opt.targetDataset))
-    test(epoch, target_test_loader, dataset="target")
+        logger.info("Testing on %s test dataset" % (opt.targetDataset))
+        test(epoch, target_test_loader, save=False, dataset="target")
+    logger.info("Testing on %s train dataset" % (opt.targetDataset))
+    test(epoch, target_train_loader, dataset="target")      # Use train dataset for validation on classifer
 
     # do checkpointing
     torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.chkpt, epoch + netT_epoch + 1))
     torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (opt.chkpt, epoch + netT_epoch + 1))
-print("TRAINING DONE!")
+logger.info("TRAINING DONE!")
+logger.info("Testing on %s train dataset" % (opt.sourceDataset))
+test(-1, source_train_loader, save=False, dataset="source")
+logger.info("Testing on %s test dataset" % (opt.sourceDataset))
+test(-1, source_test_loader, save=False, dataset="source")
+logger.info("Testing on %s train dataset" % (opt.targetDataset))
+test(-1, target_train_loader, save=False, dataset="target")
+logger.info("Testing on %s test dataset" % (opt.targetDataset))
+test(-1, target_test_loader, save=False, dataset="target")
+
+map(lambda plots: plots.queue.join(), plotters)
+map(lambda plots: plots.clean_up(), plotters)
