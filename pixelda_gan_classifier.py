@@ -98,6 +98,10 @@ if opt.cuda:
 
 # fixed_noise = Variable(fixed_noise)
 
+# Plotters
+plot_gan_loss = Plotter("gan_loss.jpeg", num_lines=2, legends=["g_loss", "d_loss"],
+                      xlabel="Number of iterations", ylabel="Loss", title="Loss vs Iterations")
+
 # setup optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr_gan, betas=(opt.beta1, 0.999), weight_decay=opt.weight_decay)
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr_gan, betas=(opt.beta1, 0.999), weight_decay=opt.weight_decay)
