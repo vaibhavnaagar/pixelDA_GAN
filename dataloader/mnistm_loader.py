@@ -10,16 +10,15 @@ import matplotlib.pyplot as plt
 
 
 class MNIST_M(torch.utils.data.Dataset):
-    def __init__(self, root_dir, train, transform=None):
-        self.root_dir = root_dir
+    def __init__(self, root, train, transform=None):
         self.train = train
         self.transform = transform
-        if (train):
-            self.image_dir = os.path.join(self.root_dir, 'mnist_m_train')
-            labels_file = os.path.join(self.root_dir, "mnist_m_train_labels.txt")
+        if train:
+            self.image_dir = os.path.join(root, 'mnist_m_train')
+            labels_file = os.path.join(root, "mnist_m_train_labels.txt")
         else:
-            self.image_dir = os.path.join(self.root_dir, 'mnist_m_test')
-            labels_file = os.path.join(self.root_dir, "mnist_m_test_labels.txt")
+            self.image_dir = os.path.join(root, 'mnist_m_test')
+            labels_file = os.path.join(root, "mnist_m_test_labels.txt")
 
         with open(labels_file, "r") as fp:
         	content = fp.readlines()
@@ -39,8 +38,8 @@ if __name__ == '__main__':
 	root_dir = 'data/mnist_m'
 	batch_size = 10
 	composed_transform = transforms.Compose([transforms.Scale((224,224)),transforms.ToTensor()])
-	train_dataset = MNIST_M(root_dir=root_dir, train=True, transform=composed_transform)
-	test_dataset = MNIST_M(root_dir=root_dir, train=False, transform=composed_transform)
+	train_dataset = MNIST_M(root=root_dir, train=True, transform=composed_transform)
+	test_dataset = MNIST_M(root=root_dir, train=False, transform=composed_transform)
 
 	print('Size of train dataset: %d' % len(train_dataset))
 	print('Size of test dataset: %d' % len(test_dataset))
