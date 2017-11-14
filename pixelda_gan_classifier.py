@@ -1,14 +1,11 @@
 from __future__ import print_function
-import os
+import os, sys
 import random
 import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
-import torch.utils.data
-import torchvision.datasets as dset
-import torchvision.transforms as transforms
 import torchvision.utils as vutils
 from torch.autograd import Variable
 import logging
@@ -42,10 +39,10 @@ logger = logging.getLogger()
 file_log_handler = logging.FileHandler(opt.logfile)
 logger.addHandler(file_log_handler)
 
-stderr_log_handler = logging.StreamHandler()
+stderr_log_handler = logging.StreamHandler(sys.stdout)
 logger.addHandler(stderr_log_handler)
 
-logger.setLevel('DEBUG')
+logger.setLevel('INFO')
 formatter = logging.Formatter()
 file_log_handler.setFormatter(formatter)
 stderr_log_handler.setFormatter(formatter)

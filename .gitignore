@@ -8,3 +8,5 @@ checkpoint/*
 plots
 plots/*
 *.log
+classifiers_plots
+classifiers_checkpoint
