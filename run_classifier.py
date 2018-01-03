@@ -33,6 +33,7 @@ parser.add_argument('--cuda', action='store_true', help='enables cuda')
 parser.add_argument('--manualSeed', type=int, default=9926, help='manual seed')
 parser.add_argument('--nepoch', type=int, default=10, help='number of epochs to train for')
 parser.add_argument('--weight_decay', type=float, default=1e-5, help='L2 weight decay')
+parser.add_argument('--test', '-t', action='store_true', help='test only')
 
 args = parser.parse_args()
 
@@ -58,7 +59,7 @@ num_classes = 10
 ngpu = args.ngpu
 
 # Model
-if args.resume:
+if args.resume or args.test:
     # Load checkpoint.
     print('==> Resuming from checkpoint..')
     assert os.path.isfile(args.net), 'Error: no saved model found!'
@@ -91,16 +92,17 @@ criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(net.parameters(), lr=args.lr, betas=(args.beta1, 0.999), weight_decay=args.weight_decay)
 net_lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_decay_step, gamma=args.lr_decay_rate)
 
-if not os.path.isdir(args.plotdir):
-    os.makedirs(args.plotdir)
-plot_loss = Plotter("%s/%s_%s_loss.jpeg" % (args.plotdir, classifier_name, args.dataset), num_lines=2,
-                    legends=["train_loss", "test_loss"], xlabel="Number of Epochs", ylabel="Loss",
-                    title="Loss vs Epochs")
+if not args.test:
+    if not os.path.isdir(args.plotdir):
+        os.makedirs(args.plotdir)
+    plot_loss = Plotter("%s/%s_%s_loss.jpeg" % (args.plotdir, classifier_name, args.dataset), num_lines=2,
+                        legends=["train_loss", "test_loss"], xlabel="Number of Epochs", ylabel="Loss",
+                        title="Loss vs Epochs")
 
-plot_acc = Plotter("%s/%s_%s_acc.jpeg" % (args.plotdir, classifier_name, args.dataset), num_lines=2,
-                    legends=["train_accuracy", "test_accuracy"], xlabel="Number of Epochs", ylabel="Accuracy",
-                    title="Accuracy vs Epochs")
-plotters = [plot_loss, plot_acc]
+    plot_acc = Plotter("%s/%s_%s_acc.jpeg" % (args.plotdir, classifier_name, args.dataset), num_lines=2,
+                        legends=["train_accuracy", "test_accuracy"], xlabel="Number of Epochs", ylabel="Accuracy",
+                        title="Accuracy vs Epochs")
+    plotters = [plot_loss, plot_acc]
 
 # Training
 def train(epoch):
@@ -129,14 +131,14 @@ def train(epoch):
             % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
     return train_loss/len(trainloader), 100.*correct/total
 
-def test(epoch):
+def test(epoch, loader, save=True):
     global best_acc, best_epoch
     net.eval()
     test_loss = 0
     correct = 0
     total = 0
     embeddings = []
-    for batch_idx, (inputs, targets) in enumerate(testloader):
+    for batch_idx, (inputs, targets) in enumerate(loader):
         if use_cuda:
             inputs, targets = inputs.cuda(), targets.cuda()
         inputs, targets = Variable(inputs, volatile=True), Variable(targets)
@@ -149,12 +151,12 @@ def test(epoch):
         total += targets.size(0)
         correct += predicted.eq(targets.data).cpu().sum()
 
-        progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+        progress_bar(batch_idx, len(loader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
             % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
 
     # Save checkpoint.
     acc = 100.*correct/total
-    if acc > best_acc:
+    if acc > best_acc and save:
         print('Saving..')
         print("Epoch:", epoch, "Accuracy:", acc)
         state = {
@@ -167,15 +169,22 @@ def test(epoch):
         torch.save(state, '%s/%s_%s.chkpt' % (args.chkpt, classifier_name, args.dataset))
         best_acc = acc
         best_epoch = epoch
-    return test_loss/len(testloader), acc
+    return test_loss/len(loader), acc
 
-for epoch in range(start_epoch, start_epoch+args.nepoch):
-    print("Train:")
-    train_loss, train_acc = train(epoch)
-    print("Test:")
-    test_loss, test_acc = test(epoch)
-    plot_loss((epoch, train_loss), (epoch, test_loss))
-    plot_acc((epoch, train_acc), (epoch, test_acc))
-print("Best accuracy: ", best_acc, "Epoch:", best_epoch)
-map(lambda plots: plots.queue.join(), plotters)
-map(lambda plots: plots.clean_up(), plotters)
+if args.test:
+    train_loss, train_acc = test(-1, trainloader, save=False)
+    print("Train Accuracy:", train_acc, "Train Loss:", train_loss)
+    test_loss, test_acc = test(-1, testloader, save=False)
+    print("Test Accuracy:", test_acc, "Test Loss:", test_loss)
+else:
+    for epoch in range(start_epoch, start_epoch+args.nepoch):
+        print("Train:")
+        train_loss, train_acc = train(epoch)
+        print("Test:")
+        test_loss, test_acc = test(epoch, testloader)
+        plot_loss((epoch, train_loss), (epoch, test_loss))
+        plot_acc((epoch, train_acc), (epoch, test_acc))
+    print("Best accuracy: ", best_acc, "Epoch:", best_epoch)
+    map(lambda plots: plots.queue.put(None), plotters)
+    map(lambda plots: plots.queue.join(), plotters)
+    map(lambda plots: plots.clean_up(), plotters)
