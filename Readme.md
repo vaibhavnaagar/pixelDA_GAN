@@ -1,7 +1,7 @@
 # Unsupervised Domain Adaptation with GAN #
 > CS698U (Visual Recognition)
 
-* Implementation of paper- [Bousmalis, Konstantinos, et al. "Unsupervised Pixel-level Domain Adaptation with GANs." (2017)](https://arxiv.org/abs/1612.05424)
+* PyTorch implementation of paper- [Bousmalis, Konstantinos, et al. "Unsupervised Pixel-level Domain Adaptation with GANs." (2017)](https://arxiv.org/abs/1612.05424)
 
 * All classifiers except `mnist_classifer.py` are taken from [https://github.com/kuangliu/pytorch-cifar](https://github.com/kuangliu/pytorch-cifar)
 
@@ -17,8 +17,14 @@ Basic folder structure
 ├── plotter.py # generate plots parallelly
 ├── utils.py # utils
 ├── dataloader # custom dataloaders
+│   ├── mnistm_loader.py
+|   └── usps_loader.py
 ├── classifiers # Classifiers' architecture
+│   ├── mnist_classifier.py # Shared layered classifier (as per the paper)
+|   └── *.py # Other classifiers
 ├── GANs # GAN architecture
+│   ├── dcgan.py # DC-GAN architecture
+|   └── pixelda_gan.py # PIXELDA-GAN architecture
 ├── data (not included in the repo)
 │   ├── mnist # mnist data (not included in the repo); subdirectories will be created by pytorch (using torchvision.datasets)
 │   |   ├── processed
@@ -29,7 +35,7 @@ Basic folder structure
 │           ├── t10k-labels-idx1-ubyte
 │           ├── train-images-idx3-ubyte
 │           └── train-labels-idx1-ubyte
-│   ├── mnist_m # MNIST-M dataset (not included in the repo
+│   ├── mnist_m # MNIST-M dataset (not included in the repo)
         (Download: https://drive.google.com/file/d/0B9Z4d7lAwbnTNDdNeFlERWRGNVk/view)
 │   |   ├── mnist_m_test
 │           └── *.png
