@@ -12,27 +12,16 @@ import logging
 
 ## Import GANs ##
 from GANs import *
-
 ## Import Classifiers ##
 from classifiers import *
+## Import utility functions ##
 from utils import progress_bar, init_params, weights_init
 from params import get_params
 from dataset import get_dataset
 from plotter import Plotter
 
-
+## Hyper parameters ##
 opt = get_params()
-print(opt)
-print("Random Seed: ", opt.manualSeed)
-random.seed(opt.manualSeed)
-torch.manual_seed(opt.manualSeed)
-if opt.cuda:
-    torch.cuda.manual_seed_all(opt.manualSeed)
-
-cudnn.benchmark = True
-
-if torch.cuda.is_available() and not opt.cuda:
-    print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
 ## Logger ##
 logger = logging.getLogger()
@@ -46,6 +35,18 @@ logger.setLevel('INFO')
 formatter = logging.Formatter()
 file_log_handler.setFormatter(formatter)
 stderr_log_handler.setFormatter(formatter)
+
+logger.info(opt)
+logger.info("Random Seed: ", opt.manualSeed)
+random.seed(opt.manualSeed)
+torch.manual_seed(opt.manualSeed)
+if opt.cuda:
+    torch.cuda.manual_seed_all(opt.manualSeed)
+
+cudnn.benchmark = True
+
+if torch.cuda.is_available() and not opt.cuda:
+    print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
 ## Data Loaders ##
 source_train_loader, source_test_loader = get_dataset(dataset=opt.sourceDataset, root_dir=opt.sourceroot,
@@ -65,14 +66,14 @@ netG = pixelda_G(out_channels=target_channels, image_size=[imageSize, imageSize,
 netG.apply(weights_init)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
-print(netG)
+logger.info(netG)
 
 ##### Discrminator #####
 netD = pixelda_D(in_channels=target_channels, image_size=[imageSize, imageSize, target_channels], opt=opt)
 netD.apply(weights_init)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
-print(netD)
+logger.info(netD)
 
 ##### Classifier #####
 if opt.netT != '':
@@ -86,7 +87,7 @@ else:
     init_params(netT)
     best_acc = 0
     netT_epoch = 0
-print(netT)
+logger.info(netT)
 
 criterion_D = nn.BCEWithLogitsLoss()
 criterion_G = nn.BCEWithLogitsLoss()
@@ -347,5 +348,6 @@ test(-1, target_train_loader, save=False, dataset="target")
 logger.info("Testing on %s test dataset" % (opt.targetDataset))
 test(-1, target_test_loader, save=False, dataset="target")
 
+map(lambda plots: plots.queue.put(None), plotters)
 map(lambda plots: plots.queue.join(), plotters)
 map(lambda plots: plots.clean_up(), plotters)
