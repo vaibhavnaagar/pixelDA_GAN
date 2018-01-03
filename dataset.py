@@ -40,13 +40,13 @@ def get_dataset(dataset, root_dir, imageSize, batchSize, workers=1):
                                  transform=transforms.Compose([
                                  transforms.Scale(imageSize),
                                  transforms.ToTensor(),
-                                #  transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                                  ]))
         test_dataset = MNIST_M(root=root_dir, train=False,
                                  transform=transforms.Compose([
                                  transforms.Scale(imageSize),
                                  transforms.ToTensor(),
-                                #  transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                                  ]))
     elif dataset == 'usps':
         train_dataset = USPS(root=root_dir, train=True,
