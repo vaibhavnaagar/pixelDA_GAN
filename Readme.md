@@ -36,7 +36,7 @@ Basic folder structure
 │           ├── train-images-idx3-ubyte
 │           └── train-labels-idx1-ubyte
 │   ├── mnist_m # MNIST-M dataset (not included in the repo)
-        (Download: https://drive.google.com/file/d/0B9Z4d7lAwbnTNDdNeFlERWRGNVk/view)
+        (Download: https://drive.google.com/drive/folders/0B_tExHiYS-0vR2dNZEU4NGlSSW8)
 │   |   ├── mnist_m_test
 │           └── *.png
 │   |   ├── mnist_m_train
